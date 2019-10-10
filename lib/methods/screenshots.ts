@@ -254,6 +254,7 @@ export async function getFullPageScreenshotsDataDesktop(
 ): Promise<FullPageScreenshotsData> {
   const viewportScreenshots = [];
   const {devicePixelRatio, fullPageScrollTimeout, hideAfterFirstScroll, innerHeight} = options;
+  let actualInnerHeight = innerHeight;
 
   // Start with an empty array, during the scroll it will be filled because a page could also have a lazy loading
   const amountOfScrollsArray = [];
@@ -262,7 +263,7 @@ export async function getFullPageScreenshotsDataDesktop(
 
   for (let i = 0; i <= amountOfScrollsArray.length; i++) {
     // Determine and start scrolling
-    const scrollY = innerHeight * i;
+    const scrollY = actualInnerHeight * i;
     await executor(scrollToPosition, scrollY);
 
     // Simply wait the amount of time specified for lazy-loading
@@ -277,10 +278,21 @@ export async function getFullPageScreenshotsDataDesktop(
     const screenshot = await takeBase64Screenshot(takeScreenshot);
     screenshotSize = getScreenshotSize(screenshot, devicePixelRatio);
 
+    // The actual screenshot size might be slightly different than the inner height
+    // In that case, use the screenshot size instead of the innerHeight
+    if (i === 0 && screenshotSize.height !== actualInnerHeight) {
+      if (Math.round(screenshotSize.height) === actualInnerHeight) {
+        console.log('Using screenshotSize.height as innerHeight because they are close enough');
+        actualInnerHeight = screenshotSize.height;
+      } else {
+        throw new Error(`Unexpected difference between innerHeight and screenshotSize.height: innerHeight=${innerHeight} and screenshotSize=${JSON.stringify(screenshotSize)}`);
+      }
+    }
+
     // Determine scroll height and check if we need to scroll again
     scrollHeight = await executor(getDocumentScrollHeight);
 
-    if (((scrollY + innerHeight) < scrollHeight && screenshotSize.height === innerHeight)) {
+    if (((scrollY + actualInnerHeight) < scrollHeight && screenshotSize.height === actualInnerHeight)) {
       amountOfScrollsArray.push(amountOfScrollsArray.length);
     }
     // There is no else, Lazy load and large screenshots,
@@ -288,10 +300,10 @@ export async function getFullPageScreenshotsDataDesktop(
 
     // The height of the image of the last 1 could be different
     const imageHeight: number = amountOfScrollsArray.length === i
-      ? scrollHeight - (innerHeight * viewportScreenshots.length)
+      ? scrollHeight - (actualInnerHeight * viewportScreenshots.length)
       : screenshotSize.height;
     // The starting position for cropping could be different for the last image (0 means no cropping)
-    const imageYPosition = (amountOfScrollsArray.length === i && amountOfScrollsArray.length !== 0) ? innerHeight - imageHeight : 0;
+    const imageYPosition = (amountOfScrollsArray.length === i && amountOfScrollsArray.length !== 0) ? actualInnerHeight - imageHeight : 0;
 
     // Store all the screenshot data in the screenshot object
     viewportScreenshots.push({
